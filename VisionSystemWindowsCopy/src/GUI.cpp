@@ -18,7 +18,6 @@
 
 using namespace std;
 
-const string GUI::MERGED_WINDOW = "Merged Image";
 const string GUI::FILTERED_WINDOW = "Filtered Image";
 
 /**
@@ -64,14 +63,18 @@ void GUI::setVisible(bool b) {
 			cv::namedWindow(window);
 			cout << "Naming window: " << window << endl;
 		}
-		cv::namedWindow(MERGED_WINDOW);
-		cv::namedWindow(FILTERED_WINDOW);
+		BOOST_FOREACH(string& window, mergedNames) {
+			cv::namedWindow(window);
+		}
+		//cv::namedWindow(FILTERED_WINDOW);
 	} else {
 		BOOST_FOREACH(string& window, windowNames) {
 			cv::destroyWindow(window);
 		}
-		cv::destroyWindow(MERGED_WINDOW);
-		cv::destroyWindow(FILTERED_WINDOW);
+		BOOST_FOREACH(string& window, mergedNames) {
+			cv::destroyWindow(window);
+		}
+		//cv::destroyWindow(FILTERED_WINDOW);
 		// For some reason you have to put in a few delays to make the
 		// GUI windows disappear
 		for (int i = 0; i < 50; i++) {
@@ -96,14 +99,17 @@ bool GUI::isVisible() {
  * @param merged The merged images
  * @param filtered The image
  */
-void GUI::update(const cv::Mat* raw, const cv::Mat& merged,
+void GUI::update(const cv::Mat* raw, const std::vector<cv::Mat> merged,
 		const cv::Mat& filtered) {
 	if (visible) {
 		for (unsigned int i = 0; i < windowNames.size(); i++) {
 			cv::imshow(windowNames[i], raw[i]);
 		}
-		cv::imshow(MERGED_WINDOW, merged);
-		cv::imshow(FILTERED_WINDOW, filtered);
+		for (unsigned int i = 0; i < merged.size(); i++) {
+			mergedNames.push_back(to_string(mergedNames.size() + NUM_CAMERAS));
+			cv::imshow(mergedNames[i], merged[i]);
+		}
+		//cv::imshow(FILTERED_WINDOW, filtered);
 	}
 }
 

@@ -71,7 +71,7 @@ public:
 	 * @param merged The merged images
 	 * @param filtered The image
 	 */
-	void update(const cv::Mat* raw, const cv::Mat& merged, const cv::Mat& filtered);
+	void update(const cv::Mat* raw, const std::vector<cv::Mat> merged, const cv::Mat& filtered);
 
 	/**
 	 * Wait several milliseconds for a keystroke, and process it if it occurs.
@@ -104,7 +104,7 @@ private:
 	std::vector<std::string> windowNames;
 
 	// Names of various other windows
-	static const std::string MERGED_WINDOW;
+	std::vector<std::string> mergedNames;
 	static const std::string FILTERED_WINDOW;
 };
 

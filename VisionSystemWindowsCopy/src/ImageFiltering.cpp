@@ -80,6 +80,7 @@ void ImageFiltering::filter(const cv::Mat& mergedImage, const cv::Rect& roi) {
 	resize(mergedImage);
 	cv::Mat& mergedRoi = mergedImage(roi);
 	cv::Mat& filterRoi = filteredImage(roi);
+	//cout << mergedRoi.size();
 	cv::cvtColor(mergedRoi, filterRoi, CV_BGR2HSV);// convert color from rgb to hsv
 
 #pragma omp parallel for num_threads(NUM_SYSTEM_COLORS)

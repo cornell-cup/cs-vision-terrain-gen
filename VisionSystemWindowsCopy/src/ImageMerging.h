@@ -36,13 +36,13 @@ private:
 	/** The sum of the normalized alpha values for each pixel. This should be a power of 2. */
 	static const unsigned int normalizedAlphaSum = 2048;
 	/** Contains the image once it has been merged */
-	cv::Mat mergedImage;
+	//cv::Mat mergedImage;
 	std::vector<cv::Mat> mergedImages;
 
 	/** A pointer to the image of the first camera */
 	const cv::Mat* singleCameraImage;
 	
-	cv::Mat homography[NUM_CAMERAS];
+	cv::Mat homography[NUM_CAMERAS+3];
 
 	//testing
 	cv::Mat homography_test[5];
@@ -52,7 +52,7 @@ private:
 	* @param latestImages contains the images from the cameras, as given by the CameraHandler class.
 	* @param rowPointers contains row pointers for the cameras images, as given by the CameraHandler class.
 	*/
-	void merge(MergeTable table, cv::Rect& roi);
+	void merge(std::vector<MergeTable> table, cv::Rect& roi, int index);
 
 public:
 	
@@ -68,7 +68,7 @@ public:
 	* This function is used to initialize the "transform" lookup table once the homographies have been computed or loaded from file.
 	* @param latestImages contains the images from the cameras, as given by the CameraHandler class.
 	*/
-	void fillMergeTable(ImagePointer& ptr, const int& numimages);
+	void fillMergeTable(ImagePointer& ptr, const int& numimages, std::vector<int> merge_ints, int index);
 
 	/**
 	* Detect the chessboard and pre compute the necessary variables (homographies). 
@@ -78,7 +78,7 @@ public:
 	* @see readHomography()
 	* @see writeHomography()
 	*/
-	void computeHomography(const cv::Mat* images, const int& numimages);
+	void computeHomography(const cv::Mat* images, int& numimages, std::vector<int> merge_ints);
 	
 	/**
 	* Load homographies from file. 
@@ -96,7 +96,7 @@ public:
 	* @see computeHomography()
 	* @see readHomography()
 	*/
-	void update(ImagePointer& ptr, cv::Rect& roi);
+	void update(ImagePointer& ptr, cv::Rect& roi, int index);
 	
 	/**
 	* Write homographies to a file on disk. This info will be reused by the computeHomography function. 
@@ -111,7 +111,7 @@ public:
 	* Get the merged image as a const reference.
 	* @return a reference to the merged image
 	*/
-	const cv::Mat& getMergedImage() const;
+	const std::vector<cv::Mat> getMergedImage() const;
 	
 	/**
 	* Get the homography.

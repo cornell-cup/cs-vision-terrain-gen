@@ -18,7 +18,7 @@ struct PixelTransform {
 		* color to this output pixel. */
 	int imgUsed;
 	/** Array of camera pixels which contribute to this output pixel */
-	CameraPixelTransform cam[NUM_CAMERAS];
+	CameraPixelTransform cam[NUM_CAMERAS+3];
 };
 	
 /**
@@ -31,8 +31,8 @@ typedef PixelTransform** MergeTable;
 * A class to store a set of camera images and their associated MergeTable
 */
 struct ImagePointer {
-	cv::Mat images[NUM_CAMERAS];
-	MergeTable table;
+	cv::Mat images[NUM_CAMERAS+3];
+	std::vector<MergeTable> table;
 	Timer timer;
 };
 

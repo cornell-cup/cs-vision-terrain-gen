@@ -1,4 +1,5 @@
 #include "ImageMerging.h"
+#include <omp.h>
 
 cv::Point2d inline applyHomography(cv::Mat h, cv::Point p) {
 	cv::Mat_<double>& H = (cv::Mat_<double>) h;
@@ -14,20 +15,26 @@ ImageMerging::ImageMerging() {
 	singleCameraImage = NULL;
 }
 
-void ImageMerging::computeHomography(const cv::Mat* latestImages, const int& numimages) {
+void ImageMerging::computeHomography(const cv::Mat* latestImages, int& numimages, std::vector<int> merge_ints) {
 	cv::Size boardSize = cv::Size(numCornersHor, numCornersVer);
 	//vector<cv::Point2f> corners[NUM_CAMERAS <= 4 ? NUM_CAMERAS : 2];
-	vector<cv::Point2f> corners[4];
+	vector<cv::Point2f> corners[9];
 	
 	foundChessBoard = true;
 
-	
+	if (numimages == 6) {
+		for (int i = 0; i < 6; i++) {
+			cv::Mat x;
+			homography[i] = x;
+		}
+		
+		numimages = 2;
+	}
 	// Ensure chess board found in every input image
-	for (int i = 0; i < numimages; i++) {
+	for (auto &i : merge_ints){
 		foundChessBoard &= cv::findChessboardCorners(latestImages[i], boardSize,
 			corners[i], CV_CALIB_CB_ADAPTIVE_THRESH);
 	}
-	
 	if (!foundChessBoard) {
 		cerr << "Did you really put the chessboard there...?" << endl;
 		return;
@@ -35,10 +42,9 @@ void ImageMerging::computeHomography(const cv::Mat* latestImages, const int& num
 
 	cv::namedWindow("Calibration");
 	cout << "Press any key to continue..." << endl;
-
 	// Get the coordinates of each corner of the chessboard.
 	// Corners are the intersections of white and black squares.
-	for (int i = 0; i < numimages; i++) {
+	for (auto &i : merge_ints){
 		// Convert to grayscale
 		cv::Mat grayImage;
 		cv::cvtColor(latestImages[i], grayImage, CV_BGR2GRAY);
@@ -52,9 +58,7 @@ void ImageMerging::computeHomography(const cv::Mat* latestImages, const int& num
 			cv::imshow("Calibration", image);
 			cv::waitKey(0);
 		}
-	
 	cv::destroyWindow("Calibration");
-
 	// Generate reference frame points
 	float scale = WIDTH_LENGTH * PIXELS_PER_METER;
 	vector<cv::Point2f> referenceFrame;
@@ -65,10 +69,10 @@ void ImageMerging::computeHomography(const cv::Mat* latestImages, const int& num
 	}
 
 	// Calculate homographies that transform each camera's coordinates to the reference frame
-	for (int i = 0; i < numimages; i++) {
+	for (auto &i : merge_ints){
 		homography[i] = cv::findHomography(referenceFrame, corners[i]);
 	}
-	//writeHomography("test.yml");
+	writeHomography("pizza.yml");
 }
 
 void ImageMerging::readHomography(const string& fileName, const cv::Mat* latestImages) {
@@ -136,7 +140,7 @@ void ImageMerging::writeHomography(const string& fileName) {
 		numimages = NUM_CAMERAS;
 	}
 	else{
-		numimages = 4;
+		numimages = 9;
 	}
 	cv::FileStorage fs(fileName, cv::FileStorage::WRITE);
 	char name[13];
@@ -148,17 +152,10 @@ void ImageMerging::writeHomography(const string& fileName) {
 	}
 }
 
-void ImageMerging::fillMergeTable(ImagePointer& ptr, const int& numimages) {
-	/*cv::Mat* image_ptr;
-	if (numimages == 4) {
-		image_ptr = &mergedImage;
-	}
-	else if (numimages == 2){
-		image_ptr = &mergedImage2;
-	}*/
+void ImageMerging::fillMergeTable(ImagePointer& ptr, const int& numimages, std::vector<int> merge_ints, int index) {
 	// Find the bounds of the image
-	double lx = 0, hx = 0, ly = 0, hy = 0;
-	for (int i = 0; i < numimages; i++) {
+	double lx = INT_MAX, hx = INT_MIN, ly = INT_MAX, hy = INT_MIN;
+	for (auto &i : merge_ints){
 		cv::Mat hinv;
 		cv::invert(homography[i], hinv);
 		// Compute the top-left, top-right, bottom-left, and bottom-right corners
@@ -173,37 +170,46 @@ void ImageMerging::fillMergeTable(ImagePointer& ptr, const int& numimages) {
 	}
 	//initialize output image pre-computations
 	int width = hx - lx + 1, height = hy - ly + 1;
-	mergedImage = (cv::Mat(cv::Size(width, height), CV_8UC4));
-	//mergedImages.push_back(cv::Mat(cv::Size(width, height), CV_8UC4));
 
+	if (index == 0){
+		mergedImages.push_back(cv::Mat(cv::Size(width, height), CV_8UC4));
+	}
+	else{
+		mergedImages[mergedImages.size()-1] = cv::Mat(cv::Size(width, height), CV_8UC4);
+	}
 	// translation from primary image coordinates to destination (world) image coordinates
 	// just a translation because primary camera image coordinates are aligned with destination world image
 	int tx = (lx < 0) ? -lx : 0;
 	int ty = (ly < 0) ? -ly : 0;
 
 	// ptr.table[row][col] contains pointers into each camera image that contributes to output pixel row, col
-	ptr.table = new PixelTransform*[height];
+	PixelTransform ** tmp = new PixelTransform*[height];
 	for (int row = 0; row < height; row++) {
-		ptr.table[row] = new PixelTransform[width]();
+		tmp[row] = new PixelTransform[width]();
 	}
+	ptr.table.push_back(tmp);
+
 	//pre-compute output image
 	for (int row = 0; row < height; row++) {
 		for (int col = 0; col < width; col++) {
-			PixelTransform& t = ptr.table[row][col];
-			t.imgUsed = 0;
-			int cam_mask = 1;
-			for (int c = 0; c < numimages; c++) {
+			PixelTransform ** tmp = ptr.table.at(ptr.table.size() - 1);
+			PixelTransform& t = tmp[row][col];
+			t.imgUsed = 0;		
+			for (auto &c : merge_ints){
+				int cam_mask = 1;
 				// homography is from each camera to primary camera coordinates
 				CameraPixelTransform& p = t.cam[c];
 				cv::Point2d pt = applyHomography(homography[c], cv::Point(col - tx, row - ty));
 				int x = (int)pt.x;
 				int y = (int)pt.y;
+
 				int inBounds = x > 0 && x < ptr.images[c].cols - 1
 					&& y > 0 && y < ptr.images[c].rows - 1;
 				t.imgUsed |= inBounds << c;
 				// assigns alpha value in the range [0, blend_radius] , when
 				// the pixel is within blend_radius of some edge of the image
 				// it is given less weight in the final image pixel color
+				cam_mask = cam_mask << c;
 				if (t.imgUsed & cam_mask) {
 					p.pixel = &(ptr.images[c].at<cv::Vec4b>(y, x));
 					int alphaOptions[5] = {
@@ -215,7 +221,6 @@ void ImageMerging::fillMergeTable(ImagePointer& ptr, const int& numimages) {
 					};
 					p.alphaVal = *std::min_element(alphaOptions, alphaOptions + 5);
 				}
-				cam_mask = cam_mask << 1;
 			}
 		}
 	}
@@ -224,25 +229,25 @@ void ImageMerging::fillMergeTable(ImagePointer& ptr, const int& numimages) {
 		for (int col = 0; col < width; col++) {
 			// Compute sum
 			int sum = 0;
-			for (int c = 0; c < numimages; c++) {
-				sum += ptr.table[row][col].cam[c].alphaVal;
+			for (auto &c : merge_ints){
+				PixelTransform ** tmp = ptr.table.at(ptr.table.size() - 1);
+				sum += tmp[row][col].cam[c].alphaVal;
 			}
 			if (sum == 0) sum = 1;
 			// Normalize
 			double scale = static_cast<double>(normalizedAlphaSum) / static_cast<double>(sum);
-			for (int c = 0; c < numimages; c++) {
-				CameraPixelTransform& t = ptr.table[row][col].cam[c];
+			for (auto &c : merge_ints){
+				PixelTransform ** tmp = ptr.table.at(ptr.table.size()-1);
+				CameraPixelTransform& t = tmp[row][col].cam[c];
 				t.alphaVal = (int)(scale * t.alphaVal + 0.5); // Add 0.5 for rounding
 			}
 		}
-	}
-	
+	}	
 }
 
-void ImageMerging::merge(MergeTable table, cv::Rect& roi) {
+void ImageMerging::merge(std::vector<MergeTable> table, cv::Rect& roi, int index) {
 // generate combined destination image by bilinear interpolation using pixel color info from input images
 // whose warped image overlaps that point
-
 	const int nchan = 4;
 	const int rowBegin = roi.y;
 	const int rowEnd   = roi.y + roi.height;
@@ -251,45 +256,52 @@ void ImageMerging::merge(MergeTable table, cv::Rect& roi) {
 
 #pragma omp parallel for  num_threads(4)
 
-	for (int row = rowBegin; row < rowEnd; ++row) {
-		cv::Vec4b* mergeRows = mergedImage.ptr<cv::Vec4b>(row);
-		PixelTransform* transformRows = table[row];
+	for (int row = rowBegin; row < rowEnd; ++row) {	
+		int i = omp_get_thread_num();
+		cv::Vec4b* mergeRows = (mergedImages.at(index)).ptr<cv::Vec4b>(row);
+		PixelTransform ** tmp = table.at(index);
+		PixelTransform* transformRows = tmp[row];
 
 		for (int col = colBegin; col < colEnd; ++col) {
 			cv::Vec4b& mergePixel = mergeRows[col];
 			PixelTransform& transformPixel = transformRows[col];
-			unsigned int channels[nchan] = {0};
-
-			for (int c = 0; c < NUM_CAMERAS; ++c) {
+			unsigned int channels[nchan] = { 0 };
+			for (int c = 0; c < NUM_CAMERAS + 3; ++c) {
 				int camMask = 1 << c;
 				if (camMask & transformPixel.imgUsed) {
 					CameraPixelTransform& t = transformPixel.cam[c];
 					for (int k = 0; k < nchan; ++k) {
-						channels[k] += t.alphaVal * (*t.pixel)[k];
+							channels[k] += t.alphaVal * (*t.pixel)[k];			
 					}
 				}
 			}
-			
+
 			for (int k = 0; k < nchan; ++k) {
-				mergePixel[k] = (uchar) (channels[k] / normalizedAlphaSum);
+				mergePixel[k] = (uchar)(channels[k] / normalizedAlphaSum);
 			}
 		}
 	}
+	
 }
 
-void ImageMerging::update(ImagePointer& ptr, cv::Rect& roi) {
+void ImageMerging::update(ImagePointer& ptr, cv::Rect& roi, int index) {
 	if (foundChessBoard) {
-		merge(ptr.table, roi);
+		merge(ptr.table, roi, index);
 	} else {
 		singleCameraImage = ptr.images;
 	}
 }
 
-const cv::Mat& ImageMerging::getMergedImage() const {
+const std::vector<cv::Mat> ImageMerging::getMergedImage() const {
 	if (foundChessBoard) {
-		return mergedImage;
+		return mergedImages;
 	} else {
-		return *singleCameraImage;
+		std::vector<cv::Mat> tmp;
+		cv::Mat tmpmat;
+		tmpmat = *singleCameraImage;
+		tmpmat = tmpmat.clone();
+		tmp.push_back(tmpmat);
+		return tmp;
 	}
 }
 
